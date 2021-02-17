@@ -8,6 +8,27 @@
 #include <Tone.h>
 #include "DFRobotDFPlayerMini.h"
 
+NeoGamma<NeoGammaTableMethod> colorGamma;
+
+RgbColor white(255, 255, 255);
+RgbColor red(255, 0, 0);
+RgbColor green(0, 255, 0);
+RgbColor blue(0, 0, 255);
+RgbColor yellow(255, 255, 0);
+RgbColor cyan(28, 255, 255);
+RgbColor pink(255, 0, 255);
+RgbColor black(0, 0, 0);
+RgbColor coral = colorGamma.Correct(RgbColor(255, 127, 80));
+RgbColor purple = colorGamma.Correct(RgbColor(138, 43, 226));
+RgbColor olive = colorGamma.Correct(RgbColor(128, 128, 0));
+RgbColor rosyBrown = colorGamma.Correct(RgbColor(188, 143, 143));
+RgbColor yellowGreen = colorGamma.Correct(RgbColor(154, 205, 50));
+RgbColor beige = colorGamma.Correct(RgbColor(255, 235, 205));
+RgbColor darkSeaGreen = colorGamma.Correct(RgbColor(143, 188, 143));
+RgbColor orange = colorGamma.Correct(RgbColor(255,165,0));
+RgbColor turquoise = colorGamma.Correct(RgbColor(175, 238, 238));
+RgbColor plum = colorGamma.Correct(RgbColor(221, 160, 221));
+
 LiquidCrystal lcd(52, 50, 42, 44, 46, 48);
 
 int oneShotCount = 0;
@@ -25,7 +46,7 @@ Timer<10, millis, int> oneShotTimers;
  * 7 - Panel 2 indicator
  * 8 - Panel 3 indicator
  * 9 - Panel 4 indicator
- * 10 - 
+ * 10 - Tone OUT
  * 11 - 
  * 12 - 
  * 13 - 
@@ -55,7 +76,7 @@ Timer<10, millis, int> oneShotTimers;
  * 36 - Tone 3 button
  * 37 - Tone 4 button
  * 38 - Tone 5 button
- * 39 - Tone OUT
+ * 39 - DEAD
  * 40 - Tone Play
  * 41 - Countdown DIO
  * 42 - LCD D4
@@ -116,8 +137,14 @@ void initMP3Player() {
   mp3Player.play(3);
 }
 
-bool playTrack(int track) {
+bool playTrackContinue(int track) {
   mp3Player.play(track);
+  return false;
+}
+
+bool playTrack(int track) {
+  mp3Player.stop();
+  oneShotTimers.in(20, playTrackContinue, track);
   return false;
 }
 
@@ -348,14 +375,6 @@ int lastBrightness = 0;
 boolean isMasterMindRunning = true;
 NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> mastermindLights(
     5, MasterMindLED);
-RgbColor white(255, 255, 255);
-RgbColor red(255, 0, 0);
-RgbColor green(0, 255, 0);
-RgbColor blue(0, 0, 255);
-RgbColor yellow(255, 255, 0);
-RgbColor cyan(28, 255, 255);
-RgbColor pink(255, 0, 255);
-RgbColor black(0, 0, 0);
 
 RgbColor colors[8] = {white, red, green, blue, yellow, cyan, pink, black};
 char colorNames[8] = {'W', 'R', 'G', 'B', 'Y', 'C', 'P', 'E'};
@@ -422,8 +441,8 @@ next:
   }
 }
 void debugColor() {
-  Serial.println(guessColorNames);
-  Serial.flush();
+//  Serial.println(guessColorNames);
+//  Serial.flush();
 }
 
 /* Updated guessColorNames */
@@ -591,7 +610,7 @@ char getKey() {
 }
 
 bool handleKeypad(void *t) {
-//   char customKey = customKeypad.getKey();
+  if (gameState != CONTROL_ROOM) return true;
   char customKey = getKey();
   if (customKey){
     keypadEntered[keypadCount++] = customKey;
@@ -637,7 +656,7 @@ void initKeypad() {
 #define TONE_BUTTON_3 36
 #define TONE_BUTTON_4 37
 #define TONE_BUTTON_5 38
-#define TONE_PIN      39
+#define TONE_PIN      10
 #define TONE_PLAY     40
 
 Tone tonePlayer;
@@ -707,10 +726,13 @@ void tone5Pressed(const int state) {
 }
 
 bool playNextNote(int note) {
+  Serial.print("playNextNote ");
+  Serial.println(note);
   tonePlayer.play(notes[note++]);
   if (note < 5) {
     oneShotTimers.in(1000, playNextNote, note);
   } else {
+    Serial.println("stop");
     numNotesPlayed = 0;
     tonePlayer.stop();
   }
@@ -756,30 +778,34 @@ void initTone() {
 #define BLACKBOX_MARKER_BUTTON 51
 
 NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> blackboxBeamLights(53, BLACKBOX_OUTER_LED);
-NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> blackboxMarkerLights(5, BLACKBOX_INNER_LED);
+NeoPixelBrightnessBus<NeoGrbFeature, Neo400KbpsMethod> blackboxMarkerLights(5, BLACKBOX_INNER_LED);
 ButtonDebounce bbBeamButton(BLACKBOX_BEAM_BUTTON, 100);
 ButtonDebounce bbGuessButton(BLACKBOX_GUESS_BUTTON, 100);
 ButtonDebounce bbMarkerButton(BLACKBOX_MARKER_BUTTON, 100);
 Timer<1> bbBeamJoystickTimer;
 Timer<1> bbMarkerJoystickTimer;
 
-int currentBeamLight = 0;
+int currentBeamLight = 0, currentMarkerLight = 0;
 
 void bbBeamPressed(const int state) {
+  if (gameState != REACTOR_CORE) return;
   if (blackboxBeamLights.GetPixelColor(currentBeamLight) == black || blackboxBeamLights.GetPixelColor(currentBeamLight) == white) {
 
   }
 }
 
 void bbGuessPressed(const int state) {
+  if (gameState != REACTOR_CORE) return;
 
 }
 
 void bbMarkerPressed(const int state) {
+  if (gameState != REACTOR_CORE) return;
 
 }
 
 bool checkBeamJoystick(void *t) {
+  if (gameState != REACTOR_CORE) return true;
   int oldCurrentBeamLight = currentBeamLight;
   RgbColor oldColor = blackboxBeamLights.GetPixelColor(currentBeamLight);
   int x = analogRead(BLACKBOX_BEAM_X);
@@ -819,15 +845,42 @@ bool checkBeamJoystick(void *t) {
   return true;
 }
 
+// origin is lower right corner!
 bool checkMarkerJoystick(void *t) {
-  int val = analogRead(Brightness);
-  if (val < 64) val = 64;
-  if (abs(lastBrightness - val) > 32) {
-    lastBrightness = val;
-    mastermindLights.SetBrightness(val / 4);
-    Serial.println((int)(val / 4));
-    mastermindLights.Show();
+  if (gameState != REACTOR_CORE) return true;
+  int oldCurrentMarkerLight = currentMarkerLight;
+  int row = currentMarkerLight / 8;
+  int col = 7 - (currentMarkerLight % 8);
+  RgbColor oldColor = blackboxMarkerLights.GetPixelColor(currentMarkerLight);
+  int x = analogRead(BLACKBOX_MARKER_X);
+  int y = analogRead(BLACKBOX_MARKER_Y);
+  int diffX = 512-x;
+  int diffY = 512-y;
+  if (diffX < -50) { // left
+    if (col < 7) {
+      currentMarkerLight += 1;
+    }
+
+  } else if (diffX > 50) { // right
+    if (col > 0) {
+      currentMarkerLight += 1;
+    }
   }
+  if (diffY < -50) { // down
+    if (row > 0) {
+      currentMarkerLight -= 8;
+    }
+
+  } else if (diffY > 50) { // up
+    if (row < 8) {
+      currentMarkerLight += 8;
+    }
+  }
+  if (oldCurrentMarkerLight != currentMarkerLight) {
+    blackboxMarkerLights.SetPixelColor(oldCurrentMarkerLight, oldColor);  //is default color black?
+    blackboxMarkerLights.SetPixelColor(currentMarkerLight, white);
+  }
+
   return true;
 }
 
@@ -852,7 +905,7 @@ bool checkBrightness(void *t) {
   if (abs(lastBrightness - val) > 32) {
     lastBrightness = val;
     mastermindLights.SetBrightness(val / 4);
-    Serial.println((int)(val / 4));
+//    Serial.println((int)(val / 4));
     mastermindLights.Show();
   }
   return true;
@@ -892,9 +945,10 @@ bool updateCountdown(void *t) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
   while (!Serial)
     ;  // wait for serial attach
+    Serial.println("Starting");
   lcd.begin(16, 2);
   lcd.clear();
   lcd.createChar(1, arrowUp);
@@ -910,8 +964,8 @@ void setup() {
   initKeypad();
   initMP3Player();
   initBlackbox();
-  reportSwitches();
-  reportKeycode();
+//  reportSwitches();
+//  reportKeycode();
 }
 
 void loop() {
