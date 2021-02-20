@@ -309,6 +309,12 @@ bool checkForDupSwitch(int g) {
 }
 
 void initGameState() {
+  pinMode(SWITCH1, INPUT_PULLUP);
+  pinMode(SWITCH2, INPUT_PULLUP);
+  pinMode(SWITCH3, INPUT_PULLUP);
+  pinMode(SWITCH4, INPUT_PULLUP);
+  pinMode(SWITCH5, INPUT_PULLUP);
+  pinMode(SWITCH6, INPUT_PULLUP);
     for (int g=0;g<5;g++) {
       do {
         for (int s=0;s<6;s++) {
@@ -440,9 +446,12 @@ next:
     i++;
   }
 }
-void debugColor() {
-//  Serial.println(guessColorNames);
-//  Serial.flush();
+void debugColor(RgbColor c) {
+  Serial.print(c.R);
+  Serial.print(" ");
+  Serial.print(c.G);
+  Serial.print(" ");
+  Serial.println(c.B);
 }
 
 /* Updated guessColorNames */
@@ -532,7 +541,6 @@ void initMasterMind() {
   mastermindLights.Show();  // init lights off
   initCode();
   convertColorsToNames(code);
-  debugColor();
   mm1.setCallback(mm1Pressed);
   mm2.setCallback(mm2Pressed);
   mm3.setCallback(mm3Pressed);
@@ -762,37 +770,45 @@ void initTone() {
   for (int i=0;i<NOTES_LENGTH;i++) {
     song[i] = random(5);
   }
-  oneShotTimers.in(1000, playNextNote, 0);
+//  oneShotTimers.in(1000, playNextNote, 0);
 }
 /* --------------END TONES -------------------------*/
 
 /* ----------------- BLACKBOX ----------------------*/
-#define BLACKBOX_BEAM_X   2
-#define BLACKBOX_BEAM_Y   3
-#define BLACKBOX_MARKER_X 4
-#define BLACKBOX_MARKER_Y 5
+//X and Y are reversed from the joystick since I need to mount these with the pins facing up
+#define BLACKBOX_BEAM_X   3
+#define BLACKBOX_BEAM_Y   2
+//X and Y are reversed from the joystick since I need to mount these with the pins facing up
+#define BLACKBOX_MARKER_X 5
+#define BLACKBOX_MARKER_Y 4
 #define BLACKBOX_OUTER_LED 53
 #define BLACKBOX_INNER_LED 3
 #define BLACKBOX_BEAM_BUTTON 45
+//#define BLACKBOX_BEAM_BUTTON 8
 #define BLACKBOX_GUESS_BUTTON 47
 #define BLACKBOX_MARKER_BUTTON 51
 
-NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> blackboxBeamLights(53, BLACKBOX_OUTER_LED);
-NeoPixelBrightnessBus<NeoGrbFeature, Neo400KbpsMethod> blackboxMarkerLights(5, BLACKBOX_INNER_LED);
-ButtonDebounce bbBeamButton(BLACKBOX_BEAM_BUTTON, 100);
+NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> blackboxBeamLights(32, BLACKBOX_OUTER_LED);
+NeoPixelBrightnessBus<NeoGrbFeature, Neo400KbpsMethod> blackboxMarkerLights(64, BLACKBOX_INNER_LED);
+//ButtonDebounce bbBeamButton(BLACKBOX_BEAM_BUTTON, 100);
 ButtonDebounce bbGuessButton(BLACKBOX_GUESS_BUTTON, 100);
 ButtonDebounce bbMarkerButton(BLACKBOX_MARKER_BUTTON, 100);
 Timer<1> bbBeamJoystickTimer;
 Timer<1> bbMarkerJoystickTimer;
+Timer<1> beamButtonTimer;
 
 int currentBeamLight = 0, currentMarkerLight = 0;
+int prevBeamLight = 0, prevMarkerLight = 0;
+//RgbColor prevBeamColor = black, prevMarkerColor = black;
+int nextColorIndex = 2, hitColorIndex = 0, reflectionColorIndex = 1;
 
-void bbBeamPressed(const int state) {
-  if (gameState != REACTOR_CORE) return;
-  if (blackboxBeamLights.GetPixelColor(currentBeamLight) == black || blackboxBeamLights.GetPixelColor(currentBeamLight) == white) {
+RgbColor beamColors[] = {red, yellow, blue, green, cyan, pink, turquoise, yellowGreen, orange, 
+coral, purple, olive, rosyBrown, darkSeaGreen, plum, beige};
 
-  }
-}
+RgbColor outerLights[32];
+RgbColor innerLights[64];
+
+int rodX[5], rodY[5];
 
 void bbGuessPressed(const int state) {
   if (gameState != REACTOR_CORE) return;
@@ -800,47 +816,173 @@ void bbGuessPressed(const int state) {
 }
 
 void bbMarkerPressed(const int state) {
+  Serial.print("beam button ");
+  Serial.println(state);
   if (gameState != REACTOR_CORE) return;
 
 }
 
+bool hitRod(int x, int y) {
+  for (int r=0;r<5;r++) {
+    if (rodX[r] == x && rodY[r] == y) return true;
+  }
+  return false;
+}
+
+void placeBeamMarker(RgbColor color, int loc) {
+    outerLights[loc] = color;
+    int computedLight = loc;
+    if (computedLight < 8) computedLight = 7 - computedLight;
+    blackboxBeamLights.SetPixelColor(computedLight, color);
+    blackboxBeamLights.Show();
+
+    // outerLights[currentBeamLight] = beamColors[nextColorIndex];
+    // int computedLight = currentBeamLight;
+    // if (computedLight < 8) computedLight = 7 - computedLight;
+    // blackboxBeamLights.SetPixelColor(computedLight, beamColors[nextColorIndex++]);
+    // blackboxBeamLights.Show();
+}
+
+void fireBeam() {
+  // -1 -1 is lower left corner of the 10x10 that surrounds the 8x8 blackbox
+  int row = 0;
+  int col = 0;
+  int deltaX = 0;
+  int deltaY = 0;
+  if (currentBeamLight < 8) {
+    row = currentBeamLight;
+    col = -1;
+    deltaX = 1;
+  } else if (currentBeamLight > 23) {
+    row = -1;
+    col = 31-currentBeamLight;
+    deltaY = 1;
+  } else if (currentBeamLight >=8 && currentBeamLight < 16) {
+    row = 8;
+    col = currentBeamLight - 8;
+    deltaY = -1;
+  } else {
+    col = 8;
+    row = 23 - currentBeamLight;
+    deltaX = -1;
+  }
+
+  while(true) {
+    row += deltaY;
+    col += deltaX;
+    if (row < 0 || row == 8 || col < 0 || col == 8) { //hit perimeter
+      placeBeamMarker(beamColors[nextColorIndex], currentBeamLight);
+      int outLoc = 0;
+      placeBeamMarker(beamColors[nextColorIndex++], ?);
+      break;
+    }
+    if (hitRod(col, row)) {
+      placeBeamMarker(beamColors[hitColorIndex], currentBeamLight);
+      break;
+    }
+    /* Now the hard part - the rest of the logic of tracing the beam through the blackbox.
+      The algorithm is basically this:
+      1. If the space in front of our direction of travel is a rod, this is a hit.
+      2. If the space on the left is a rod:
+          a. If space on the right is a rod, do nothing
+          b. Else, deflect left
+              i. if outside of box, back up 1 space from direction of travel and mark exit point. DONE
+      3. Else If the space on the right is a rod:
+          a. deflect right
+              i. if outside of box, back up 1 space from direction of travel and mark exit point. DONE
+    */
+    int x = col + deltaX;
+    int y = row + deltaY;
+    if (x < 0 || x == 8 || y < 0 || y == 8) { //hit perimeter let code above catch and handle this
+      continue;
+    }
+    if (hitRod(x, y)) {
+      placeBeamMarker(beamColors[hitColorIndex], currentBeamLight);
+      break;
+    }
+    int x1 = col + deltaY;
+    int x2 = col - deltaY;
+    int y1 = row + deltaX;
+    int y2 = row - deltaY;
+    if (hitRod(x1, y1)) { //hit on one side
+      if (hitRod(x2, y2)) {
+        continue;
+      }
+      x1 = col + deltaX;
+      y1 = row + deltaY;
+      int temp = deltaX;
+      deltaX = deltaY;
+      deltaY = temp;
+    } else if (hitRod(x2, y2)) {
+      x2 = col - deltaX;
+      y2 = row - deltaY;
+      int temp = -deltaX;
+      deltaX = -deltaY;
+      deltaY = temp;
+    }
+  }
+
+
+}
+
+bool checkBeamButton(void *t) {
+  int state = digitalRead(BLACKBOX_BEAM_BUTTON);
+  if (gameState != REACTOR_CORE || state == HIGH) return true;
+  if (black == outerLights[currentBeamLight]) {
+    fireBeam();
+  }
+  return true;
+}
+
 bool checkBeamJoystick(void *t) {
   if (gameState != REACTOR_CORE) return true;
-  int oldCurrentBeamLight = currentBeamLight;
-  RgbColor oldColor = blackboxBeamLights.GetPixelColor(currentBeamLight);
   int x = analogRead(BLACKBOX_BEAM_X);
   int y = analogRead(BLACKBOX_BEAM_Y);
   int diffX = 512-x;
   int diffY = 512-y;
-  if (diffX < -50) {        //moving left
-    if (currentBeamLight > 8 && currentBeamLight < 16) {
+  if (diffX < -100) {        //moving left
+    if (currentBeamLight >= 8 && currentBeamLight <= 16) {
       currentBeamLight--;
-    } else if (currentBeamLight > 23 && currentBeamLight < 31) {
+    } else if (currentBeamLight >= 23 && currentBeamLight <= 31) {
       currentBeamLight++;
+      if (currentBeamLight == 32) currentBeamLight = 0;
     }
-  } else if (diffX > 50) {  //moving right
-    if (currentBeamLight > 7 && currentBeamLight < 15) {
+  } else if (diffX > 100) {  //moving right
+    if (currentBeamLight == 0) currentBeamLight = 31;
+    else if (currentBeamLight >= 7 && currentBeamLight <= 15) {
       currentBeamLight++;
-    } else if (currentBeamLight > 24) {
-      currentBeamLight--;
-    }
-  }
-  if (diffY < -50) {        //moving down
-    if (currentBeamLight > 0 && currentBeamLight < 8) {
-      currentBeamLight--;
-    } else if (currentBeamLight > 15 && currentBeamLight < 23) {
-      currentBeamLight++;
-    }
-  } else if (diffY > 50) {  //moving up
-    if (currentBeamLight < 7) {
-      currentBeamLight++;
-    } else if (currentBeamLight > 16 && currentBeamLight < 24) {
+    } else if (currentBeamLight >= 24) {
       currentBeamLight--;
     }
   }
-  if (oldCurrentBeamLight != currentBeamLight) {
-    blackboxBeamLights.SetPixelColor(oldCurrentBeamLight, oldColor);  //is default color black?
-    blackboxBeamLights.SetPixelColor(currentBeamLight, white);
+  if (diffY < -100) {        //moving down
+    if (currentBeamLight >= 0 && currentBeamLight <= 8) {
+      currentBeamLight--;
+      if (currentBeamLight < 0) currentBeamLight = 31;
+    } else if (currentBeamLight >= 15 && currentBeamLight <= 23) {
+      currentBeamLight++;
+    }
+  } else if (diffY > 100) {  //moving up
+    if (currentBeamLight <= 7) {
+      currentBeamLight++;
+    } else if (currentBeamLight >= 16 && currentBeamLight <= 24) {
+      currentBeamLight--;
+    } else if (currentBeamLight == 31) currentBeamLight = 0;
+  }
+  if (prevBeamLight != currentBeamLight) {
+    int computedLight = currentBeamLight;
+    if (computedLight < 8) computedLight = 7 - computedLight;
+    if (outerLights[prevBeamLight] == black) {
+      int prevComputed = prevBeamLight;
+      if (prevComputed < 8) prevComputed = 7 - prevComputed;
+      blackboxBeamLights.SetPixelColor(prevComputed, black);
+      blackboxBeamLights.Show();
+    }
+    prevBeamLight = currentBeamLight;
+    if (outerLights[currentBeamLight] == black) {
+      blackboxBeamLights.SetPixelColor(computedLight, white);
+      blackboxBeamLights.Show();
+    }
   }
   return true;
 }
@@ -848,52 +990,78 @@ bool checkBeamJoystick(void *t) {
 // origin is lower right corner!
 bool checkMarkerJoystick(void *t) {
   if (gameState != REACTOR_CORE) return true;
-  int oldCurrentMarkerLight = currentMarkerLight;
   int row = currentMarkerLight / 8;
-  int col = 7 - (currentMarkerLight % 8);
-  RgbColor oldColor = blackboxMarkerLights.GetPixelColor(currentMarkerLight);
+  int col =  (currentMarkerLight % 8);
   int x = analogRead(BLACKBOX_MARKER_X);
   int y = analogRead(BLACKBOX_MARKER_Y);
   int diffX = 512-x;
   int diffY = 512-y;
-  if (diffX < -50) { // left
+  if (diffX < -100) { // left
     if (col < 7) {
       currentMarkerLight += 1;
     }
 
-  } else if (diffX > 50) { // right
+  } else if (diffX > 100) { // right
     if (col > 0) {
-      currentMarkerLight += 1;
+      currentMarkerLight -= 1;
     }
   }
-  if (diffY < -50) { // down
+  if (diffY < -100) { // down
     if (row > 0) {
       currentMarkerLight -= 8;
     }
 
-  } else if (diffY > 50) { // up
-    if (row < 8) {
+  } else if (diffY > 100) { // up
+    if (row < 7) {
       currentMarkerLight += 8;
     }
   }
-  if (oldCurrentMarkerLight != currentMarkerLight) {
-    blackboxMarkerLights.SetPixelColor(oldCurrentMarkerLight, oldColor);  //is default color black?
-    blackboxMarkerLights.SetPixelColor(currentMarkerLight, white);
+  if (prevMarkerLight != currentMarkerLight) {
+    blackboxMarkerLights.SetPixelColor(prevMarkerLight, black);  //is default color black?
+    prevMarkerLight = currentMarkerLight;
+//    prevMarkerColor = blackboxMarkerLights.GetPixelColor(currentMarkerLight);
+    blackboxMarkerLights.SetPixelColor(currentMarkerLight, yellow);
+    blackboxMarkerLights.Show();
   }
 
   return true;
 }
 
 void initBlackbox() {
+  pinMode(BLACKBOX_GUESS_BUTTON, INPUT_PULLUP);
+  pinMode(BLACKBOX_BEAM_BUTTON, INPUT_PULLUP);
+  pinMode(BLACKBOX_MARKER_BUTTON, INPUT_PULLUP);
   blackboxMarkerLights.Begin();
   blackboxMarkerLights.Show();
   blackboxBeamLights.Begin();
   blackboxBeamLights.Show();
-  bbBeamButton.setCallback(bbBeamPressed);
+  blackboxBeamLights.SetBrightness(100);
+  blackboxMarkerLights.SetBrightness(100);
+  
+  for (int i=0;i<5;i++) {
+    repeat:
+    int x = random(8);
+    int y = random(8);
+    for (int j=0;j<i;j++) {
+      if (rodX[j] == x && rodY[j] == y) goto repeat;
+    }
+    rodX[i] = x;
+    rodY[i] = y;
+  }
+  for (int i=0;i<32;i++) {
+    outerLights[i] = black;
+  }
+  blackboxBeamLights.Show();
+  for (int i=0;i<64;i++) {
+    innerLights[i] = black;
+  }
+  blackboxMarkerLights.Show();
+//  bbBeamButton.setCallback(bbBeamPressed);
   bbGuessButton.setCallback(bbGuessPressed);
   bbMarkerButton.setCallback(bbMarkerPressed);
   bbBeamJoystickTimer.every(200, checkBeamJoystick);
   bbMarkerJoystickTimer.every(200, checkMarkerJoystick);
+  beamButtonTimer.every(200, checkBeamButton);
 }
 /* --------------END BLACKBOX ----------------------*/
 
@@ -905,7 +1073,6 @@ bool checkBrightness(void *t) {
   if (abs(lastBrightness - val) > 32) {
     lastBrightness = val;
     mastermindLights.SetBrightness(val / 4);
-//    Serial.println((int)(val / 4));
     mastermindLights.Show();
   }
   return true;
@@ -946,8 +1113,8 @@ bool updateCountdown(void *t) {
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial)
-    ;  // wait for serial attach
+//  while (!Serial)
+//    ;  // wait for serial attach
     Serial.println("Starting");
   lcd.begin(16, 2);
   lcd.clear();
@@ -964,8 +1131,10 @@ void setup() {
   initKeypad();
   initMP3Player();
   initBlackbox();
+
+  gameState = REACTOR_CORE;
 //  reportSwitches();
-//  reportKeycode();
+  //reportKeycode();
 }
 
 void loop() {
@@ -982,6 +1151,8 @@ void loop() {
   keypadTimer.tick();
   bbBeamJoystickTimer.tick();
   bbMarkerJoystickTimer.tick();
+
+  beamButtonTimer.tick();
 
   if (isGameOver) {
 
