@@ -6,6 +6,7 @@
 #include <arduino-timer.h>
 //#include <Keypad.h>
 #include <Tone.h>
+
 #include "DFRobotDFPlayerMini.h"
 
 NeoGamma<NeoGammaTableMethod> colorGamma;
@@ -25,7 +26,7 @@ RgbColor rosyBrown = colorGamma.Correct(RgbColor(188, 143, 143));
 RgbColor yellowGreen = colorGamma.Correct(RgbColor(154, 205, 50));
 RgbColor beige = colorGamma.Correct(RgbColor(255, 235, 205));
 RgbColor darkSeaGreen = colorGamma.Correct(RgbColor(143, 188, 143));
-RgbColor orange = colorGamma.Correct(RgbColor(255,165,0));
+RgbColor orange = colorGamma.Correct(RgbColor(255, 165, 0));
 RgbColor turquoise = colorGamma.Correct(RgbColor(175, 238, 238));
 RgbColor plum = colorGamma.Correct(RgbColor(221, 160, 221));
 
@@ -34,7 +35,7 @@ LiquidCrystal lcd(52, 50, 42, 44, 46, 48);
 int oneShotCount = 0;
 Timer<10, millis, int> oneShotTimers;
 
-//Lock combo is 4219
+// Lock combo is 4219
 
 /*
  * PINS:
@@ -47,15 +48,15 @@ Timer<10, millis, int> oneShotTimers;
  * 8 - Panel 3 indicator
  * 9 - Panel 4 indicator
  * 10 - Tone OUT
- * 11 - 
- * 12 - 
- * 13 - 
+ * 11 -
+ * 12 -
+ * 13 -
  *
- * 14 - 
- * 15 - 
- * 16 - 
- * 17 - 
- * 
+ * 14 -
+ * 15 -
+ * 16 -
+ * 17 -
+ *
  * 18 - DFMini TX
  * 19 - DFMini RX
  *
@@ -98,37 +99,79 @@ Timer<10, millis, int> oneShotTimers;
  * A4 - Blackbox marker X
  * A5 - Blackbox marker Y
  * A6 - Keypad
- * 
+ *
  */
+
+/* -------------------- LCD ---------------------------------*/
+Timer<1> lcdTimer;
+int msgCount = 0;
+char *msgLine1Queue[10];
+char *msgLine2Queue[10];
+char msgBuffer[17];
+
+void queueMsg(char *line1, char *line2) {
+  if (msgCount < 10) {
+    msgLine1Queue[msgCount] = line1;
+    msgLine2Queue[msgCount++] = line2;
+  }
+}
+
+bool checkMsgQueue(void* t) {
+  if (msgCount > 0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(msgLine1Queue[0]);
+    lcd.setCursor(0, 1);
+    lcd.print(msgLine2Queue[0]);
+    if (strcmp(msgLine1Queue[0],"") != 0) {
+      free(msgLine1Queue[0]);
+    }
+    if (strcmp(msgLine2Queue[0],"") != 0) {
+      free(msgLine2Queue[0]);
+    }
+
+    for (int i=1;i<msgCount;i++) {
+      msgLine1Queue[i-1] = msgLine1Queue[i];
+      msgLine2Queue[i-1] = msgLine2Queue[i];
+    }
+    msgCount--;
+  }
+  return true;
+}
+
+void initLcd() {
+  lcdTimer.every(3000, checkMsgQueue);
+}
+
+/* ---------------END LCD -----------------------------------*/
 
 /* -------------------- DFPlayer -----------------------------*/
 DFRobotDFPlayerMini mp3Player;
-//DO NOT change these constants, some logic depends on the ordering
-//case closed during game
-#define TRACK_COUNTDOWN_STILL_RUNNING           1
-//case is first opened by plaer 
-#define TRACK_INTRO                             2
-//game power up successful
-#define TRACK_POWERED_UP                        3
-//modem powered up
-#define TRACK_MODEM_ON                          4
-//firewall powered up
-#define TRACK_FIREWALL_ON                       5
-//control room powered up
-#define TRACK_CONTROL_ROOM_ON                   6
-//reactor core powered up
-#define TRACK_REACTOR_UP                        7
+// DO NOT change these constants, some logic depends on the ordering
+// case closed during game
+#define TRACK_COUNTDOWN_STILL_RUNNING 1
+// case is first opened by plaer
+#define TRACK_INTRO 2
+// game power up successful
+#define TRACK_POWERED_UP 3
+// modem powered up
+#define TRACK_MODEM_ON 4
+// firewall powered up
+#define TRACK_FIREWALL_ON 5
+// control room powered up
+#define TRACK_CONTROL_ROOM_ON 6
+// reactor core powered up
+#define TRACK_REACTOR_UP 7
 
-#define TRACK_INCOMING_MSG                      8
-#define TRACK_MODEM_ACQUIRED                    9
-#define TRACK_FIREWALL_BREECHED                 10
-#define TRACK_CONTROL_ROOM_ACCESS_GRANTED       11
-#define TRACK_REACTOR_DEACTIVATED               12
-#define TRACK_CLOSING_MSG                       13
-#define TRACK_FUNCTION_INACCESSIBLE             14
-//played to indicate wrong answer
-#define TRACK_WRONG                             15
-
+#define TRACK_INCOMING_MSG 8
+#define TRACK_MODEM_ACQUIRED 9
+#define TRACK_FIREWALL_BREECHED 10
+#define TRACK_CONTROL_ROOM_ACCESS_GRANTED 11
+#define TRACK_REACTOR_DEACTIVATED 12
+#define TRACK_CLOSING_MSG 13
+#define TRACK_FUNCTION_INACCESSIBLE 14
+// played to indicate wrong answer
+#define TRACK_WRONG 15
 
 void initMP3Player() {
   Serial1.begin(9600);
@@ -158,26 +201,14 @@ void playInfoThenTrack(int track) {
 boolean isGameOver = false;
 
 byte arrowUp[8] = {
-  B00000,
-  B00100,
-  B01110,
-  B10101,
-  B00100,
-  B00100,
-  B00000,
+    B00000, B00100, B01110, B10101, B00100, B00100, B00000,
 };
 
 byte arrowDown[8] = {
-  B00000,
-  B00100,
-  B00100,
-  B10101,
-  B01110,
-  B00100,
-  B00000,
+    B00000, B00100, B00100, B10101, B01110, B00100, B00000,
 };
 
-#define CASE    20
+#define CASE 20
 #define SWITCH1 28
 #define SWITCH2 29
 #define SWITCH3 30
@@ -185,28 +216,29 @@ byte arrowDown[8] = {
 #define SWITCH5 32
 #define SWITCH6 33
 
-//case is first supplied power
-#define INITIAL         0
-//This is not case power, but the power state for the game
-#define POWER_OFF       1
-#define POWER_ON        2
-//aka Tones module
-#define MODEM           3
-//aka Mastermind Module
-#define FIREWALL        4
-//aka Keypad module
-#define CONTROL_ROOM    5
-//aka Blackbox module
-#define REACTOR_CORE    6
+// case is first supplied power
+#define INITIAL 0
+// This is not case power, but the power state for the game
+#define POWER_OFF 1
+#define POWER_ON 2
+// aka Tones module
+#define MODEM 3
+// aka Mastermind Module
+#define FIREWALL 4
+// aka Keypad module
+#define CONTROL_ROOM 5
+// aka Blackbox module
+#define REACTOR_CORE 6
 
-#define POWER_SWITCHES        0
-#define MODEM_SWITCHES        1
-#define FIREWALL_SWITCHES     2
+#define POWER_SWITCHES 0
+#define MODEM_SWITCHES 1
+#define FIREWALL_SWITCHES 2
 #define CONTROL_ROOM_SWITCHES 3
 #define REACTOR_CORE_SWITCHES 4
 
 uint8_t GAMES[5] = {POWER_ON, MODEM, FIREWALL, CONTROL_ROOM, REACTOR_CORE};
-const char *gameNames[5] = {"Power", "Modem", "Firewall", "Control room", "Reactor core"};
+const char *gameNames[5] = {"Power", "Modem", "Firewall", "Control room",
+                            "Reactor core"};
 
 uint8_t gameState = INITIAL;
 uint8_t switchState[6] = {HIGH, HIGH, HIGH, HIGH, HIGH, HIGH};
@@ -220,21 +252,22 @@ ButtonDebounce switch5(SWITCH5, 100);
 ButtonDebounce switch6(SWITCH6, 100);
 
 void checkSwitches() {
-  for (int g=0;g<5;g++) {
+  for (int g = 0; g < 5; g++) {
     int found = -1;
-    for (int s=0;s<6;s++) {
+    for (int s = 0; s < 6; s++) {
       if (switchesGame[g][s] != switchState[s]) {
         found = g;
-      } break;
+      }
+      break;
     }
     if (found != -1) {
       if (gameState == POWER_OFF && found != 0) return;
-      if (gameState != found-1) {
+      if (gameState != found - 1) { //ensure current state is the one prev to the current switches
         playInfoThenTrack(TRACK_FUNCTION_INACCESSIBLE);
         return;
       }
       gameState = GAMES[found];
-      playInfoThenTrack(found+3);   //+3 because track 3 is the power up track
+      playInfoThenTrack(found + 3);  //+3 because track 3 is the power up track
       break;
     }
   }
@@ -272,12 +305,12 @@ void switch6Pressed(const int state) {
 
 void reportSwitches() {
   lcd.clear();
-  for (int g=0;g<5;g++) {
-    lcd.setCursor(0,0);
+  for (int g = 0; g < 5; g++) {
+    lcd.setCursor(0, 0);
     lcd.print(gameNames[g]);
-    lcd.setCursor(0,1);
-    for (int s=0;s<6;s++) {
-      lcd.print(switchesGame[g][s] == HIGH?"\2":"\1");
+    lcd.setCursor(0, 1);
+    for (int s = 0; s < 6; s++) {
+      lcd.print(switchesGame[g][s] == HIGH ? "\2" : "\1");
       lcd.print(" ");
     }
     delay(10000);
@@ -286,9 +319,9 @@ void reportSwitches() {
 }
 
 bool checkForDupSwitch(int g) {
-  for (int i=0;i<g;i++) {
+  for (int i = 0; i < g; i++) {
     bool found = true;
-    for (int s=0;s<6;s++) {
+    for (int s = 0; s < 6; s++) {
       if (switchesGame[i][s] != switchesGame[g][s]) {
         found = false;
         break;
@@ -296,8 +329,8 @@ bool checkForDupSwitch(int g) {
     }
     if (found) return true;
     found = true;
-    //check for all off, which is invalid since it is starting state
-    for (int s=0;s<6;s++) {
+    // check for all off, which is invalid since it is starting state
+    for (int s = 0; s < 6; s++) {
       if (switchesGame[i][s] != HIGH) {
         found = false;
         break;
@@ -315,39 +348,40 @@ void initGameState() {
   pinMode(SWITCH4, INPUT_PULLUP);
   pinMode(SWITCH5, INPUT_PULLUP);
   pinMode(SWITCH6, INPUT_PULLUP);
-    for (int g=0;g<5;g++) {
-      do {
-        for (int s=0;s<6;s++) {
-          switchesGame[g][s] = random(2);
-        }
-      } while (checkForDupSwitch(g));
-    }
-    switch1.setCallback(switch1Pressed);
-    switch2.setCallback(switch2Pressed);
-    switch3.setCallback(switch3Pressed);
-    switch4.setCallback(switch4Pressed);
-    switch5.setCallback(switch5Pressed);
-    switch6.setCallback(switch6Pressed);
+  for (int g = 0; g < 5; g++) {
+    do {
+      for (int s = 0; s < 6; s++) {
+        switchesGame[g][s] = random(2);
+      }
+    } while (checkForDupSwitch(g));
+  }
+  switch1.setCallback(switch1Pressed);
+  switch2.setCallback(switch2Pressed);
+  switch3.setCallback(switch3Pressed);
+  switch4.setCallback(switch4Pressed);
+  switch5.setCallback(switch5Pressed);
+  switch6.setCallback(switch6Pressed);
 }
 
 /* -----------------END GAME STATE ----------------------------*/
 
 /* ------------------- CASE ----------------------------------*/
-#define caseOpen    49
+#define caseOpen 49
 
 ButtonDebounce caseSwitch(caseOpen, 100);
 
 void caseOpenClose(const int state) {
   if (gameState == INITIAL) {
     if (state == LOW) {
-      //case was closed
+      // case was closed
       gameState = POWER_OFF;
     } else {
-      //this shouldn't happen as case is open when connected to power, so ignore and wait for case to close
+      // this shouldn't happen as case is open when connected to power, so
+      // ignore and wait for case to close
     }
   } else {
     if (state == LOW) {
-      //tried closing case while playing
+      // tried closing case while playing
       mp3Player.play(TRACK_COUNTDOWN_STILL_RUNNING);
     } else {
       if (gameState == POWER_OFF) {
@@ -357,9 +391,7 @@ void caseOpenClose(const int state) {
   }
 }
 
-void initCase() {
-  caseSwitch.setCallback(caseOpenClose);
-}
+void initCase() { caseSwitch.setCallback(caseOpenClose); }
 
 /* --------------------- MASTERMIND ---------------------------*/
 #define MasterMindButton1 22
@@ -402,9 +434,9 @@ ButtonDebounce mm5(MasterMindButton5, 100);
 ButtonDebounce mmEnter(MasterMindEnter, 100);
 
 void initCode() {
-   for (uint8_t i=0;i<5;i++) {
-     code[i] = colors[random(8)];
-   }
+  for (uint8_t i = 0; i < 5; i++) {
+    code[i] = colors[random(8)];
+  }
 }
 
 boolean compareRGB(RgbColor color1, RgbColor color2) {
@@ -412,8 +444,7 @@ boolean compareRGB(RgbColor color1, RgbColor color2) {
 }
 
 void mastermindComplete() {
-  lcd.setCursor(0,1);
-  lcd.print("Firewall down!");
+  queueMsg("Firewall down!","");
 }
 
 /* updates clue */
@@ -467,17 +498,11 @@ void convertColorsToNames(RgbColor g[5]) {
 }
 
 void showClue() {
-  lcd.setCursor(0, 0);
-  lcd.print(clue.correct);
-  lcd.print(" exactly right");
-  lcd.setCursor(0, 1);
-  if (clue.correct == 5) {
-    lcd.print("                ");
-//    lcd.print("MODEM ACQUIRED");
-  } else {
-    lcd.print(clue.incorrect);
-    lcd.print(" need reorder");
-  }
+  char *msg1 = (char *)malloc(17);
+  sprintf(msg1, "%i %s", clue.correct, "exactly right");
+  char *msg2 = (char *)malloc(17);
+  sprintf(msg2, "%i %s", clue.incorrect, "need reorder");
+  queueMsg(msg1, msg2);
 }
 
 void mmNextLight(int index) {
@@ -489,37 +514,43 @@ void mmNextLight(int index) {
 
 // state is HIGH/LOW
 void mm1Pressed(const int state) {
-  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL && state == LOW) {
+  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL &&
+      state == LOW) {
     mmNextLight(0);
   }
 }
 
 void mm2Pressed(const int state) {
-  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL && state == LOW) {
+  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL &&
+      state == LOW) {
     mmNextLight(1);
   }
 }
 
 void mm3Pressed(const int state) {
-  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL && state == LOW) {
+  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL &&
+      state == LOW) {
     mmNextLight(2);
   }
 }
 
 void mm4Pressed(const int state) {
-  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL && state == LOW) {
+  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL &&
+      state == LOW) {
     mmNextLight(3);
   }
 }
 
 void mm5Pressed(const int state) {
-  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL && state == LOW) {
+  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL &&
+      state == LOW) {
     mmNextLight(4);
   }
 }
 
 void mmEnterPressed(const int state) {
-  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL && state == LOW) {
+  if (!isGameOver && isMasterMindRunning && gameState == FIREWALL &&
+      state == LOW) {
     evaluateGuess();
     showClue();
     if (clue.correct == 5) {
@@ -573,23 +604,24 @@ int convertSecsToTimeRemaining(int secs) {
 /* --------------------END countdown timer------------------ */
 
 /* ------------------- KEYPAD --------------------*/
-const byte ROWS = 4; //four rows
-const byte COLS = 4; //four columns
-//define the symbols on the buttons of the keypads
-char hexaKeys[ROWS][COLS] = {
-  {'1','2','3','A'},
-  {'4','5','6','B'},
-  {'7','8','9','C'},
-  {'*','0','#','D'}
-};
+const byte ROWS = 4;  // four rows
+const byte COLS = 4;  // four columns
+// define the symbols on the buttons of the keypads
+char hexaKeys[ROWS][COLS] = {{'1', '2', '3', 'A'},
+                             {'4', '5', '6', 'B'},
+                             {'7', '8', '9', 'C'},
+                             {'*', '0', '#', 'D'}};
 
 const char *letters = "1234A456B789C*0#D";
 
-byte rowPins[ROWS] = {10, 11, 12, 13}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {15, 15, 16, 16}; //connect to the column pinouts of the keypad
+byte rowPins[ROWS] = {10, 11, 12,
+                      13};  // connect to the row pinouts of the keypad
+byte colPins[COLS] = {15, 15, 16,
+                      16};  // connect to the column pinouts of the keypad
 
-//initialize an instance of class NewKeypad
-//Keypad customKeypad = Keypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS); 
+// initialize an instance of class NewKeypad
+// Keypad customKeypad = Keypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS,
+// COLS);
 Timer<1> keypadTimer;
 
 char keypadCode[5];
@@ -598,32 +630,32 @@ int keypadCount = 0;
 
 char getKey() {
   int val = analogRead(6);
-  if (val >= 1000) return '1'; //1
-  if (val >= 900) return '2'; //2
-  if (val >= 820) return '3'; //3
-  if (val >= 750) return 'A'; //4
-  if (val >= 660) return '4'; //5
-  if (val >= 620) return '5'; //6
-  if (val >= 585) return '6'; //7
-  if (val >= 540) return 'B'; //8
-  if (val >= 500) return '7'; //9
-  if (val >= 475) return '8'; //10
-  if (val >= 455) return '9'; //11
-  if (val >= 425) return 'C'; //12
-  if (val >= 360) return '*'; //13
-  if (val >= 300) return '0'; //14
-  if (val >= 255) return '#'; //15
-  if (val >= 200) return 'D'; //16
+  if (val >= 1000) return '1';  // 1
+  if (val >= 900) return '2';   // 2
+  if (val >= 820) return '3';   // 3
+  if (val >= 750) return 'A';   // 4
+  if (val >= 660) return '4';   // 5
+  if (val >= 620) return '5';   // 6
+  if (val >= 585) return '6';   // 7
+  if (val >= 540) return 'B';   // 8
+  if (val >= 500) return '7';   // 9
+  if (val >= 475) return '8';   // 10
+  if (val >= 455) return '9';   // 11
+  if (val >= 425) return 'C';   // 12
+  if (val >= 360) return '*';   // 13
+  if (val >= 300) return '0';   // 14
+  if (val >= 255) return '#';   // 15
+  if (val >= 200) return 'D';   // 16
   return 0;
 }
 
 bool handleKeypad(void *t) {
   if (gameState != CONTROL_ROOM) return true;
   char customKey = getKey();
-  if (customKey){
+  if (customKey) {
     keypadEntered[keypadCount++] = customKey;
-    if (keypadCount == 5){
-      for (int i=0;i<5;i++) {
+    if (keypadCount == 5) {
+      for (int i = 0; i < 5; i++) {
         if (keypadEntered[i] != keypadCode[i]) {
           mp3Player.play(TRACK_WRONG);
           return true;
@@ -638,10 +670,10 @@ bool handleKeypad(void *t) {
 
 void reportKeycode() {
   lcd.clear();
-  lcd.setCursor(0,0);
+  lcd.setCursor(0, 0);
   lcd.print("Keycode");
-  lcd.setCursor(0,1);
-  for (int s=0;s<5;s++) {
+  lcd.setCursor(0, 1);
+  for (int s = 0; s < 5; s++) {
     lcd.print(keypadCode[s]);
     lcd.print(" ");
   }
@@ -650,7 +682,7 @@ void reportKeycode() {
 }
 
 void initKeypad() {
-  for (int i=0;i<5;i++) {
+  for (int i = 0; i < 5; i++) {
     keypadCode[i] = letters[random(16)];
   }
   keypadTimer.every(200, handleKeypad);
@@ -664,8 +696,8 @@ void initKeypad() {
 #define TONE_BUTTON_3 36
 #define TONE_BUTTON_4 37
 #define TONE_BUTTON_5 38
-#define TONE_PIN      10
-#define TONE_PLAY     40
+#define TONE_PIN 10
+#define TONE_PLAY 40
 
 Tone tonePlayer;
 ButtonDebounce tone1(TONE_BUTTON_1, 100);
@@ -685,7 +717,7 @@ boolean modemComplete = false;
 
 void checkNotes() {
   if (numNotesPlayed != NOTES_LENGTH) return;
-  for (int i=0;i<NOTES_LENGTH;i++) {
+  for (int i = 0; i < NOTES_LENGTH; i++) {
     if (notesPlayed[i] != song[i]) return;
   }
   playInfoThenTrack(TRACK_MODEM_ACQUIRED);
@@ -767,18 +799,20 @@ void initTone() {
   tone5.setCallback(tone5Pressed);
   tonePlay.setCallback(tonePlayPressed);
   tonePlayer.begin(TONE_PIN);
-  for (int i=0;i<NOTES_LENGTH;i++) {
+  for (int i = 0; i < NOTES_LENGTH; i++) {
     song[i] = random(5);
   }
-//  oneShotTimers.in(1000, playNextNote, 0);
+  //  oneShotTimers.in(1000, playNextNote, 0);
 }
 /* --------------END TONES -------------------------*/
 
 /* ----------------- BLACKBOX ----------------------*/
-//X and Y are reversed from the joystick since I need to mount these with the pins facing up
-#define BLACKBOX_BEAM_X   3
-#define BLACKBOX_BEAM_Y   2
-//X and Y are reversed from the joystick since I need to mount these with the pins facing up
+// X and Y are reversed from the joystick since I need to mount these with the
+// pins facing up
+#define BLACKBOX_BEAM_X 3
+#define BLACKBOX_BEAM_Y 2
+// X and Y are reversed from the joystick since I need to mount these with the
+// pins facing up
 #define BLACKBOX_MARKER_X 5
 #define BLACKBOX_MARKER_Y 4
 #define BLACKBOX_OUTER_LED 53
@@ -788,9 +822,11 @@ void initTone() {
 #define BLACKBOX_GUESS_BUTTON 47
 #define BLACKBOX_MARKER_BUTTON 51
 
-NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> blackboxBeamLights(32, BLACKBOX_OUTER_LED);
-NeoPixelBrightnessBus<NeoGrbFeature, Neo400KbpsMethod> blackboxMarkerLights(64, BLACKBOX_INNER_LED);
-//ButtonDebounce bbBeamButton(BLACKBOX_BEAM_BUTTON, 100);
+NeoPixelBrightnessBus<NeoRgbFeature, Neo400KbpsMethod> blackboxBeamLights(
+    32, BLACKBOX_OUTER_LED);
+NeoPixelBrightnessBus<NeoGrbFeature, Neo400KbpsMethod> blackboxMarkerLights(
+    64, BLACKBOX_INNER_LED);
+// ButtonDebounce bbBeamButton(BLACKBOX_BEAM_BUTTON, 100);
 ButtonDebounce bbGuessButton(BLACKBOX_GUESS_BUTTON, 100);
 ButtonDebounce bbMarkerButton(BLACKBOX_MARKER_BUTTON, 100);
 Timer<1> bbBeamJoystickTimer;
@@ -799,11 +835,11 @@ Timer<1> beamButtonTimer;
 
 int currentBeamLight = 0, currentMarkerLight = 0;
 int prevBeamLight = 0, prevMarkerLight = 0;
-//RgbColor prevBeamColor = black, prevMarkerColor = black;
-int nextColorIndex = 2, hitColorIndex = 0, reflectionColorIndex = 1;
+int nextColorIndex = 2, hitColorIndex = 0, reflectColorIndex = 1;
 
-RgbColor beamColors[] = {red, yellow, blue, green, cyan, pink, turquoise, yellowGreen, orange, 
-coral, purple, olive, rosyBrown, darkSeaGreen, plum, beige};
+RgbColor beamColors[] = {red,       yellow,       blue,   green, cyan,   pink,
+                         turquoise, yellowGreen,  orange, coral, purple, olive,
+                         rosyBrown, darkSeaGreen, plum,   beige};
 
 RgbColor outerLights[32];
 RgbColor innerLights[64];
@@ -812,122 +848,125 @@ int rodX[5], rodY[5];
 
 void bbGuessPressed(const int state) {
   if (gameState != REACTOR_CORE) return;
-
 }
 
 void bbMarkerPressed(const int state) {
   Serial.print("beam button ");
   Serial.println(state);
   if (gameState != REACTOR_CORE) return;
-
 }
 
 bool hitRod(int x, int y) {
-  for (int r=0;r<5;r++) {
+  for (int r = 0; r < 5; r++) {
     if (rodX[r] == x && rodY[r] == y) return true;
   }
   return false;
 }
 
 void placeBeamMarker(RgbColor color, int loc) {
-    outerLights[loc] = color;
-    int computedLight = loc;
-    if (computedLight < 8) computedLight = 7 - computedLight;
-    blackboxBeamLights.SetPixelColor(computedLight, color);
-    blackboxBeamLights.Show();
+  outerLights[loc] = color;
+  int computedLight = loc;
+  if (computedLight < 8) computedLight = 7 - computedLight;
+  blackboxBeamLights.SetPixelColor(computedLight, color);
+  blackboxBeamLights.Show();
+}
 
-    // outerLights[currentBeamLight] = beamColors[nextColorIndex];
-    // int computedLight = currentBeamLight;
-    // if (computedLight < 8) computedLight = 7 - computedLight;
-    // blackboxBeamLights.SetPixelColor(computedLight, beamColors[nextColorIndex++]);
-    // blackboxBeamLights.Show();
+int calcBeamLight(int x, int y) {
+  // x and y are the coords in the virutal 10x10 box, with origin at lower right corner
+  if (x == 8) return y;
+  if (x == -1) return 23 - y;
+  if (y == -1) return x + 24;
+  return 15 - x;
 }
 
 void fireBeam() {
-  // -1 -1 is lower left corner of the 10x10 that surrounds the 8x8 blackbox
+  // -1 -1 is lower right corner of the 10x10 that surrounds the 8x8 blackbox
   int row = 0;
   int col = 0;
   int deltaX = 0;
   int deltaY = 0;
   if (currentBeamLight < 8) {
     row = currentBeamLight;
-    col = -1;
-    deltaX = 1;
+    col = 8;
+    deltaX = -1;
   } else if (currentBeamLight > 23) {
     row = -1;
-    col = 31-currentBeamLight;
+    col = currentBeamLight - 24;
     deltaY = 1;
-  } else if (currentBeamLight >=8 && currentBeamLight < 16) {
+  } else if (currentBeamLight >= 8 && currentBeamLight < 16) {
     row = 8;
-    col = currentBeamLight - 8;
+    col = 15 - currentBeamLight;
     deltaY = -1;
   } else {
-    col = 8;
+    col = -1;
     row = 23 - currentBeamLight;
-    deltaX = -1;
+    deltaX = 1;
   }
 
-  while(true) {
-    row += deltaY;
-    col += deltaX;
-    if (row < 0 || row == 8 || col < 0 || col == 8) { //hit perimeter
-      placeBeamMarker(beamColors[nextColorIndex], currentBeamLight);
-      int outLoc = 0;
-      placeBeamMarker(beamColors[nextColorIndex++], ?);
-      break;
-    }
-    if (hitRod(col, row)) {
-      placeBeamMarker(beamColors[hitColorIndex], currentBeamLight);
-      break;
-    }
-    /* Now the hard part - the rest of the logic of tracing the beam through the blackbox.
-      The algorithm is basically this:
-      1. If the space in front of our direction of travel is a rod, this is a hit.
-      2. If the space on the left is a rod:
-          a. If space on the right is a rod, do nothing
-          b. Else, deflect left
-              i. if outside of box, back up 1 space from direction of travel and mark exit point. DONE
-      3. Else If the space on the right is a rod:
-          a. deflect right
-              i. if outside of box, back up 1 space from direction of travel and mark exit point. DONE
-    */
+  while (true) {
+    //calc square in front of beam
     int x = col + deltaX;
     int y = row + deltaY;
-    if (x < 0 || x == 8 || y < 0 || y == 8) { //hit perimeter let code above catch and handle this
-      continue;
-    }
+    //check square in front of us
     if (hitRod(x, y)) {
       placeBeamMarker(beamColors[hitColorIndex], currentBeamLight);
       break;
     }
-    int x1 = col + deltaY;
-    int x2 = col - deltaY;
-    int y1 = row + deltaX;
-    int y2 = row - deltaY;
-    if (hitRod(x1, y1)) { //hit on one side
-      if (hitRod(x2, y2)) {
-        continue;
+    //x1/y1 is square in front of and to one side of beam, x2/y2 is the square in front of and on the other side of the beam
+    int x1 = x + deltaY;
+    int y1 = y + deltaX;
+    int x2 = x - deltaY;
+    int y2 = y - deltaX;
+    if (hitRod(x1, y1)) {  // rod on first side
+      if (hitRod(x2, y2)) { // rod on second side
+      //reflection
+        placeBeamMarker(beamColors[reflectColorIndex], currentBeamLight);
+        break;
       }
-      x1 = col + deltaX;
-      y1 = row + deltaY;
-      int temp = deltaX;
-      deltaX = deltaY;
-      deltaY = temp;
-    } else if (hitRod(x2, y2)) {
-      x2 = col - deltaX;
-      y2 = row - deltaY;
+      if (row < 0 || row == 8 || col < 0 || col == 8) { //start on perimeter but trying to deflect, this is reflection
+        placeBeamMarker(beamColors[reflectColorIndex], currentBeamLight);
+        break;
+      }
+      //deflect negative
       int temp = -deltaX;
       deltaX = -deltaY;
       deltaY = temp;
+      row += deltaY;
+      col += deltaX;
+      continue;
+    } else if (hitRod(x2, y2)) {  // rod on other side
+      if (row < 0 || row == 8 || col < 0 || col == 8) { //start on perimeter but trying to deflect, this is reflection
+        placeBeamMarker(beamColors[reflectColorIndex], currentBeamLight);
+        break;
+      }
+      //deflect positive
+      int temp = deltaX;
+      deltaX = deltaY;
+      deltaY = temp;
+      row += deltaY;
+      col += deltaX;
+      continue;
     }
+    row += deltaY;  // advance
+    col += deltaX;
+    if (row < 0 || row == 8 || col < 0 || col == 8) {  // hit perimeter
+      placeBeamMarker(beamColors[nextColorIndex], currentBeamLight);
+      int outLoc = 0;
+      //? is calc beam light from row/col
+      placeBeamMarker(beamColors[nextColorIndex++], calcBeamLight(col, row));
+      break;
+    }
+
   }
-
-
 }
 
 bool checkBeamButton(void *t) {
   int state = digitalRead(BLACKBOX_BEAM_BUTTON);
   if (gameState != REACTOR_CORE || state == HIGH) return true;
+  if (nextColorIndex == 15) {
+    //out of guesses - play message and flash lights?
+    return true;
+  }
   if (black == outerLights[currentBeamLight]) {
     fireBeam();
   }
@@ -936,38 +975,44 @@ bool checkBeamButton(void *t) {
 
 bool checkBeamJoystick(void *t) {
   if (gameState != REACTOR_CORE) return true;
+  if (nextColorIndex == 15) {
+    //out of guesses - play message and flash lights?
+    return true;
+  }
   int x = analogRead(BLACKBOX_BEAM_X);
   int y = analogRead(BLACKBOX_BEAM_Y);
-  int diffX = 512-x;
-  int diffY = 512-y;
-  if (diffX < -100) {        //moving left
+  int diffX = 512 - x;
+  int diffY = 512 - y;
+  if (diffX < -100) {  // moving left
     if (currentBeamLight >= 8 && currentBeamLight <= 16) {
       currentBeamLight--;
     } else if (currentBeamLight >= 23 && currentBeamLight <= 31) {
       currentBeamLight++;
       if (currentBeamLight == 32) currentBeamLight = 0;
     }
-  } else if (diffX > 100) {  //moving right
-    if (currentBeamLight == 0) currentBeamLight = 31;
+  } else if (diffX > 100) {  // moving right
+    if (currentBeamLight == 0)
+      currentBeamLight = 31;
     else if (currentBeamLight >= 7 && currentBeamLight <= 15) {
       currentBeamLight++;
     } else if (currentBeamLight >= 24) {
       currentBeamLight--;
     }
   }
-  if (diffY < -100) {        //moving down
+  if (diffY < -100) {  // moving down
     if (currentBeamLight >= 0 && currentBeamLight <= 8) {
       currentBeamLight--;
       if (currentBeamLight < 0) currentBeamLight = 31;
     } else if (currentBeamLight >= 15 && currentBeamLight <= 23) {
       currentBeamLight++;
     }
-  } else if (diffY > 100) {  //moving up
+  } else if (diffY > 100) {  // moving up
     if (currentBeamLight <= 7) {
       currentBeamLight++;
     } else if (currentBeamLight >= 16 && currentBeamLight <= 24) {
       currentBeamLight--;
-    } else if (currentBeamLight == 31) currentBeamLight = 0;
+    } else if (currentBeamLight == 31)
+      currentBeamLight = 0;
   }
   if (prevBeamLight != currentBeamLight) {
     int computedLight = currentBeamLight;
@@ -991,35 +1036,37 @@ bool checkBeamJoystick(void *t) {
 bool checkMarkerJoystick(void *t) {
   if (gameState != REACTOR_CORE) return true;
   int row = currentMarkerLight / 8;
-  int col =  (currentMarkerLight % 8);
+  int col = (currentMarkerLight % 8);
   int x = analogRead(BLACKBOX_MARKER_X);
   int y = analogRead(BLACKBOX_MARKER_Y);
-  int diffX = 512-x;
-  int diffY = 512-y;
-  if (diffX < -100) { // left
+  int diffX = 512 - x;
+  int diffY = 512 - y;
+  if (diffX < -100) {  // left
     if (col < 7) {
       currentMarkerLight += 1;
     }
 
-  } else if (diffX > 100) { // right
+  } else if (diffX > 100) {  // right
     if (col > 0) {
       currentMarkerLight -= 1;
     }
   }
-  if (diffY < -100) { // down
+  if (diffY < -100) {  // down
     if (row > 0) {
       currentMarkerLight -= 8;
     }
 
-  } else if (diffY > 100) { // up
+  } else if (diffY > 100) {  // up
     if (row < 7) {
       currentMarkerLight += 8;
     }
   }
   if (prevMarkerLight != currentMarkerLight) {
-    blackboxMarkerLights.SetPixelColor(prevMarkerLight, black);  //is default color black?
+    blackboxMarkerLights.SetPixelColor(prevMarkerLight,
+                                       black);  // is default color black?
     prevMarkerLight = currentMarkerLight;
-//    prevMarkerColor = blackboxMarkerLights.GetPixelColor(currentMarkerLight);
+    //    prevMarkerColor =
+    //    blackboxMarkerLights.GetPixelColor(currentMarkerLight);
     blackboxMarkerLights.SetPixelColor(currentMarkerLight, yellow);
     blackboxMarkerLights.Show();
   }
@@ -1037,26 +1084,26 @@ void initBlackbox() {
   blackboxBeamLights.Show();
   blackboxBeamLights.SetBrightness(100);
   blackboxMarkerLights.SetBrightness(100);
-  
-  for (int i=0;i<5;i++) {
-    repeat:
+
+  for (int i = 0; i < 5; i++) {
+  repeat:
     int x = random(8);
     int y = random(8);
-    for (int j=0;j<i;j++) {
+    for (int j = 0; j < i; j++) {
       if (rodX[j] == x && rodY[j] == y) goto repeat;
     }
     rodX[i] = x;
     rodY[i] = y;
   }
-  for (int i=0;i<32;i++) {
+  for (int i = 0; i < 32; i++) {
     outerLights[i] = black;
   }
   blackboxBeamLights.Show();
-  for (int i=0;i<64;i++) {
+  for (int i = 0; i < 64; i++) {
     innerLights[i] = black;
   }
   blackboxMarkerLights.Show();
-//  bbBeamButton.setCallback(bbBeamPressed);
+  //  bbBeamButton.setCallback(bbBeamPressed);
   bbGuessButton.setCallback(bbGuessPressed);
   bbMarkerButton.setCallback(bbMarkerPressed);
   bbBeamJoystickTimer.every(200, checkBeamJoystick);
@@ -1079,11 +1126,11 @@ bool checkBrightness(void *t) {
 }
 
 void gameOver() {
-    isGameOver = true;
-    for (int i=0;i<5;i++) {
-      guess[i] = black;
-    }
-    mastermindLights.Show();
+  isGameOver = true;
+  for (int i = 0; i < 5; i++) {
+    guess[i] = black;
+  }
+  mastermindLights.Show();
 }
 
 bool blinkingCountdown = false;
@@ -1113,9 +1160,9 @@ bool updateCountdown(void *t) {
 
 void setup() {
   Serial.begin(9600);
-//  while (!Serial)
-//    ;  // wait for serial attach
-    Serial.println("Starting");
+  //  while (!Serial)
+  //    ;  // wait for serial attach
+  Serial.println("Starting");
   lcd.begin(16, 2);
   lcd.clear();
   lcd.createChar(1, arrowUp);
@@ -1133,8 +1180,8 @@ void setup() {
   initBlackbox();
 
   gameState = REACTOR_CORE;
-//  reportSwitches();
-  //reportKeycode();
+  //  reportSwitches();
+  // reportKeycode();
 }
 
 void loop() {
@@ -1155,6 +1202,5 @@ void loop() {
   beamButtonTimer.tick();
 
   if (isGameOver) {
-
   }
 }
