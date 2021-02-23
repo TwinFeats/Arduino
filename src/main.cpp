@@ -48,7 +48,7 @@ Timer<10, millis, int> oneShotTimers;
  * 8 - Panel 3 indicator
  * 9 - Panel 4 indicator
  * 10 - Tone OUT
- * 11 -
+ * 11 - DFPlayer busy in
  * 12 -
  * 13 -
  *
@@ -113,6 +113,9 @@ void queueMsg(char *line1, char *line2) {
   if (msgCount < 10) {
     msgLine1Queue[msgCount] = line1;
     msgLine2Queue[msgCount++] = line2;
+    if (msgCount == 1) {  //only one msg, display it now
+      checkMsgQueue(NULL);
+    }
   }
 }
 
@@ -135,17 +138,20 @@ bool checkMsgQueue(void* t) {
       msgLine2Queue[i-1] = msgLine2Queue[i];
     }
     msgCount--;
+    lcdTimer.in(5000, checkMsgQueue); //schedule next msg check
   }
-  return true;
+  return false; //one-shot only
 }
 
 void initLcd() {
-  lcdTimer.every(3000, checkMsgQueue);
+//  lcdTimer.every(3000, checkMsgQueue);
 }
 
 /* ---------------END LCD -----------------------------------*/
 
 /* -------------------- DFPlayer -----------------------------*/
+#define mp3BusyPin 11
+
 DFRobotDFPlayerMini mp3Player;
 // DO NOT change these constants, some logic depends on the ordering
 // case closed during game
@@ -173,28 +179,54 @@ DFRobotDFPlayerMini mp3Player;
 // played to indicate wrong answer
 #define TRACK_WRONG 15
 
+Timer<1> mp3Timer;
+int mp3Queue[10];
+int mp3Count = 0;
+boolean mp3Playing = false;
+
+void checkMp3Queue() {
+  if (mp3Count > 0) {
+    mp3Playing = true;
+    mp3Player.play(mp3Queue[0]);
+    for (int i=1;i<mp3Count;i++) {
+      mp3Queue[i-1] = mp3Queue[i];
+    }
+    mp3Count--;
+  }
+}
+
+void playTrack(int track) {
+  if (mp3Count < 10) {
+    mp3Queue[mp3Count++] = track;
+    if (!mp3Playing) {
+      checkMp3Queue();
+    }
+  }
+}
+
+void playInfoThenTrack(int track) {
+  playTrack(TRACK_INCOMING_MSG);
+  playTrack(track);
+}
+
+boolean checkMp3Busy(void* t) {
+  mp3Playing = (digitalRead(mp3BusyPin) == LOW);
+  if (!mp3Playing) {
+    checkMp3Queue();
+  }
+  return true;
+}
+
 void initMP3Player() {
   Serial1.begin(9600);
   mp3Player.begin(Serial1);
   mp3Player.volume(30);
   mp3Player.play(3);
+  pinMode(mp3BusyPin, INPUT);
+  mp3Timer.every(1000, checkMp3Busy);
 }
 
-bool playTrackContinue(int track) {
-  mp3Player.play(track);
-  return false;
-}
 
-bool playTrack(int track) {
-  mp3Player.stop();
-  oneShotTimers.in(20, playTrackContinue, track);
-  return false;
-}
-
-void playInfoThenTrack(int track) {
-  mp3Player.play(TRACK_INCOMING_MSG);
-  oneShotTimers.in(10000, playTrack, track);
-}
 /* --------------------END DFPlayer-------------------------*/
 
 /* -------------------- GAME STATE ---------------------------*/
@@ -1198,9 +1230,9 @@ void loop() {
   keypadTimer.tick();
   bbBeamJoystickTimer.tick();
   bbMarkerJoystickTimer.tick();
-
   beamButtonTimer.tick();
-
+  lcdTimer.tick();
+  mp3Timer.tick();
   if (isGameOver) {
   }
 }
