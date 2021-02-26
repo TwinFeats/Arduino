@@ -5,6 +5,7 @@
 #include <TM1637TinyDisplay.h>
 #include <arduino-timer.h>
 //#include <Keypad.h>
+#include "Adafruit_TCS34725.h"
 #include <Tone.h>
 
 #include "DFRobotDFPlayerMini.h"
@@ -16,7 +17,7 @@ RgbColor red(255, 0, 0);
 RgbColor green(0, 255, 0);
 RgbColor blue(0, 0, 255);
 RgbColor yellow(255, 255, 0);
-RgbColor cyan(28, 255, 255);
+RgbColor cyan(0, 255, 255);
 RgbColor pink(255, 0, 255);
 RgbColor black(0, 0, 0);
 RgbColor coral = colorGamma.Correct(RgbColor(255, 127, 80));
@@ -49,8 +50,8 @@ Timer<10, millis, int> oneShotTimers;
  * 9 - Panel 4 indicator
  * 10 - Tone OUT
  * 11 - DFPlayer busy in
- * 12 -
- * 13 -
+ * 12 - Color sensor LED
+ * 13 - Card reader button
  *
  * 14 -
  * 15 -
@@ -59,6 +60,8 @@ Timer<10, millis, int> oneShotTimers;
  *
  * 18 - DFMini TX
  * 19 - DFMini RX
+ * 20 SDA - Color sensor
+ * 21 SCL - Color sensor
  *
  * 22 - Mastermind Button 1
  * 23 - Mastermind Button 2
@@ -98,56 +101,39 @@ Timer<10, millis, int> oneShotTimers;
  * A3 - Blackbox beam Y
  * A4 - Blackbox marker X
  * A5 - Blackbox marker Y
- * A6 - Keypad
+ * A6 - MP3 volume
  *
  */
 
-/* -------------------- LCD ---------------------------------*/
-Timer<1> lcdTimer;
-int msgCount = 0;
-char *msgLine1Queue[10];
-char *msgLine2Queue[10];
-char msgBuffer[17];
+/*
+ * ----------------Countdown timer ------------------------
+ */
 
-void queueMsg(char *line1, char *line2) {
-  if (msgCount < 10) {
-    msgLine1Queue[msgCount] = line1;
-    msgLine2Queue[msgCount++] = line2;
-    if (msgCount == 1) {  //only one msg, display it now
-      checkMsgQueue(NULL);
-    }
-  }
+#define COUNTDOWN_CLK 43
+#define COUNTDOWN_DIO 41
+Timer<1> timer;
+TM1637TinyDisplay clock(COUNTDOWN_CLK, COUNTDOWN_DIO);
+
+int countdownSecs = 60 * 60;
+boolean countdownRunning = false;  // starts when case is closed then opened
+                                   // (case starts open when powered on)
+
+int convertSecsToTimeRemaining(int secs) {
+  int mins = secs / 60;
+  secs = secs % 60;
+  mins = mins * 100;  // shift over 2 decimal digits
+  return mins + secs;
 }
 
-bool checkMsgQueue(void* t) {
-  if (msgCount > 0) {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(msgLine1Queue[0]);
-    lcd.setCursor(0, 1);
-    lcd.print(msgLine2Queue[0]);
-    if (strcmp(msgLine1Queue[0],"") != 0) {
-      free(msgLine1Queue[0]);
-    }
-    if (strcmp(msgLine2Queue[0],"") != 0) {
-      free(msgLine2Queue[0]);
-    }
-
-    for (int i=1;i<msgCount;i++) {
-      msgLine1Queue[i-1] = msgLine1Queue[i];
-      msgLine2Queue[i-1] = msgLine2Queue[i];
-    }
-    msgCount--;
-    lcdTimer.in(5000, checkMsgQueue); //schedule next msg check
-  }
-  return false; //one-shot only
+void penalizeSeconds(int secs) {
+  countdownSecs -= secs;
 }
 
-void initLcd() {
-//  lcdTimer.every(3000, checkMsgQueue);
+void setCountdown(int secs) {
+  countdownSecs = secs;
 }
 
-/* ---------------END LCD -----------------------------------*/
+/* --------------------END countdown timer------------------ */
 
 /* -------------------- DFPlayer -----------------------------*/
 #define mp3BusyPin 11
@@ -178,6 +164,7 @@ DFRobotDFPlayerMini mp3Player;
 #define TRACK_FUNCTION_INACCESSIBLE 14
 // played to indicate wrong answer
 #define TRACK_WRONG 15
+#define TRACK_HACK_ATTEMPT_DETECTED 16
 
 Timer<1> mp3Timer;
 int mp3Queue[10];
@@ -195,12 +182,23 @@ void checkMp3Queue() {
   }
 }
 
+void playTrack(int track);
+void overridePlay(int track) {
+    mp3Count = 0;
+    mp3Player.stop();
+    mp3Playing = false;
+    playTrack(track);
+}
+
 void playTrack(int track) {
   if (mp3Count < 10) {
     mp3Queue[mp3Count++] = track;
     if (!mp3Playing) {
       checkMp3Queue();
     }
+  } else {
+    overridePlay(TRACK_HACK_ATTEMPT_DETECTED);
+    setCountdown(countdownSecs >> 1);
   }
 }
 
@@ -228,6 +226,60 @@ void initMP3Player() {
 
 
 /* --------------------END DFPlayer-------------------------*/
+
+/* -------------------- LCD ---------------------------------*/
+Timer<1> lcdTimer;
+int msgCount = 0;
+char *msgLine1Queue[10];
+char *msgLine2Queue[10];
+char msgBuffer[17];
+
+char *mallocStringLiteral(const char *str) {
+  return (char *)malloc(strlen(str)+1);
+}
+
+bool checkMsgQueue(void* t) {
+  if (msgCount > 0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(msgLine1Queue[0]);
+    lcd.setCursor(0, 1);
+    lcd.print(msgLine2Queue[0]);
+    if (msgLine1Queue[0] != NULL) {
+      free(msgLine1Queue[0]);
+    }
+    if (msgLine2Queue[0] != NULL) {
+      free(msgLine2Queue[0]);
+    }
+
+    for (int i=1;i<msgCount;i++) {
+      msgLine1Queue[i-1] = msgLine1Queue[i];
+      msgLine2Queue[i-1] = msgLine2Queue[i];
+    }
+    msgCount--;
+    lcdTimer.in(5000, checkMsgQueue); //schedule next msg check
+  }
+  return false; //one-shot only
+}
+
+void queueMsg(char *line1, char *line2) {
+  if (msgCount < 10) {
+    msgLine1Queue[msgCount] = line1;
+    msgLine2Queue[msgCount++] = line2;
+    if (msgCount == 1) {  //only one msg, display it now
+      checkMsgQueue(NULL);
+    }
+  } else {
+    overridePlay(TRACK_HACK_ATTEMPT_DETECTED);
+    setCountdown(countdownSecs >> 1);
+  }
+}
+
+void initLcd() {
+//  lcdTimer.every(3000, checkMsgQueue);
+}
+
+/* ---------------END LCD -----------------------------------*/
 
 /* -------------------- GAME STATE ---------------------------*/
 boolean isGameOver = false;
@@ -476,7 +528,7 @@ boolean compareRGB(RgbColor color1, RgbColor color2) {
 }
 
 void mastermindComplete() {
-  queueMsg("Firewall down!","");
+  queueMsg(mallocStringLiteral("Firewall down!"),NULL);
 }
 
 /* updates clue */
@@ -614,111 +666,161 @@ void initMasterMind() {
 
 /* ------------------- END MASTERMIND------------------- */
 
-/*
- * ----------------Countdown timer ------------------------
- */
+/* ----------------------------------- Control Room */
+#define CONTROL_ROOM_LED 12
+#define CARD_READER_ACTIVATE 13
 
-#define COUNTDOWN_CLK 43
-#define COUNTDOWN_DIO 41
-Timer<1> timer;
-TM1637TinyDisplay clock(COUNTDOWN_CLK, COUNTDOWN_DIO);
+Adafruit_TCS34725 cardReader = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_101MS, TCS34725_GAIN_4X);
+ButtonDebounce cardReaderActivate(CARD_READER_ACTIVATE, 100);
+uintptr_t cardReaderTimeout = NULL;
+RgbColor cardReaderSequenceAttempt[5];
+int cardReaderCount = 0;
 
-int countdownSecs = 60 * 60;
-boolean countdownRunning = false;  // starts when case is closed then opened
-                                   // (case starts open when powered on)
-
-int convertSecsToTimeRemaining(int secs) {
-  int mins = secs / 60;
-  secs = secs % 60;
-  mins = mins * 100;  // shift over 2 decimal digits
-  return mins + secs;
+bool resetCardReader(int t) {
+  cardReaderCount = 0;
+  return false;
 }
-/* --------------------END countdown timer------------------ */
+
+//VERY coarse color comparison
+bool closeToSameColor(RgbColor c1, RgbColor c2) {
+  int diffR = abs(c1.R-c2.R);
+  int diffG = abs(c1.G-c2.G);
+  int diffB = abs(c1.B-c2.B);
+  return diffR < 100 && diffG < 100 && diffB < 100;
+}
+
+void checkCardReaderSolution() {
+  for (int i=0;i<5;i++) {
+    if (!closeToSameColor(code[i], cardReaderSequenceAttempt[i])) break;
+  }
+  //done with this panel here
+
+}
+
+bool getCardReaderData(int t) {
+  if (cardReaderTimeout != NULL) oneShotTimers.cancel(cardReaderTimeout);
+  float red, green, blue;
+  cardReader.getRGB(&red, &green, &blue);
+  RgbColor colorRead((int)red, (int)green, (int)blue);
+  cardReaderSequenceAttempt[cardReaderCount++] = colorRead;
+  if (cardReaderCount == 5) {
+    checkCardReaderSolution();
+  } else {
+    cardReaderTimeout = oneShotTimers.in(10000, resetCardReader);
+  }
+  return false;
+}
+
+void readCard() {
+  digitalWrite(CONTROL_ROOM_LED, HIGH);
+  oneShotTimers.in(110, getCardReaderData);
+}
+
+void readCardCheck(int state) {
+  if (gameState == CONTROL_ROOM && state == LOW && cardReaderCount < 5) {
+    readCard();
+  }
+}
+
+void initControlRoom() {
+  if (cardReader.begin()) {
+    pinMode(CONTROL_ROOM_LED, OUTPUT);
+    digitalWrite(CONTROL_ROOM_LED, LOW);
+    cardReaderActivate.setCallback(readCardCheck);
+  } else {
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.println("Reader not found");
+    delay(10000);
+  }
+}
+
+/* ---------------------------------end Control Room */
 
 /* ------------------- KEYPAD --------------------*/
-const byte ROWS = 4;  // four rows
-const byte COLS = 4;  // four columns
-// define the symbols on the buttons of the keypads
-char hexaKeys[ROWS][COLS] = {{'1', '2', '3', 'A'},
-                             {'4', '5', '6', 'B'},
-                             {'7', '8', '9', 'C'},
-                             {'*', '0', '#', 'D'}};
+// const byte ROWS = 4;  // four rows
+// const byte COLS = 4;  // four columns
+// // define the symbols on the buttons of the keypads
+// char hexaKeys[ROWS][COLS] = {{'1', '2', '3', 'A'},
+//                              {'4', '5', '6', 'B'},
+//                              {'7', '8', '9', 'C'},
+//                              {'*', '0', '#', 'D'}};
 
-const char *letters = "1234A456B789C*0#D";
+// const char *letters = "1234A456B789C*0#D";
 
-byte rowPins[ROWS] = {10, 11, 12,
-                      13};  // connect to the row pinouts of the keypad
-byte colPins[COLS] = {15, 15, 16,
-                      16};  // connect to the column pinouts of the keypad
+// byte rowPins[ROWS] = {10, 11, 12,
+//                       13};  // connect to the row pinouts of the keypad
+// byte colPins[COLS] = {15, 15, 16,
+//                       16};  // connect to the column pinouts of the keypad
 
-// initialize an instance of class NewKeypad
-// Keypad customKeypad = Keypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS,
-// COLS);
-Timer<1> keypadTimer;
+// // initialize an instance of class NewKeypad
+// // Keypad customKeypad = Keypad( makeKeymap(hexaKeys), rowPins, colPins, ROWS,
+// // COLS);
+// Timer<1> keypadTimer;
 
-char keypadCode[5];
-char keypadEntered[5];
-int keypadCount = 0;
+// char keypadCode[5];
+// char keypadEntered[5];
+// int keypadCount = 0;
 
-char getKey() {
-  int val = analogRead(6);
-  if (val >= 1000) return '1';  // 1
-  if (val >= 900) return '2';   // 2
-  if (val >= 820) return '3';   // 3
-  if (val >= 750) return 'A';   // 4
-  if (val >= 660) return '4';   // 5
-  if (val >= 620) return '5';   // 6
-  if (val >= 585) return '6';   // 7
-  if (val >= 540) return 'B';   // 8
-  if (val >= 500) return '7';   // 9
-  if (val >= 475) return '8';   // 10
-  if (val >= 455) return '9';   // 11
-  if (val >= 425) return 'C';   // 12
-  if (val >= 360) return '*';   // 13
-  if (val >= 300) return '0';   // 14
-  if (val >= 255) return '#';   // 15
-  if (val >= 200) return 'D';   // 16
-  return 0;
-}
+// char getKey() {
+//   int val = analogRead(6);
+//   if (val >= 1000) return '1';  // 1
+//   if (val >= 900) return '2';   // 2
+//   if (val >= 820) return '3';   // 3
+//   if (val >= 750) return 'A';   // 4
+//   if (val >= 660) return '4';   // 5
+//   if (val >= 620) return '5';   // 6
+//   if (val >= 585) return '6';   // 7
+//   if (val >= 540) return 'B';   // 8
+//   if (val >= 500) return '7';   // 9
+//   if (val >= 475) return '8';   // 10
+//   if (val >= 455) return '9';   // 11
+//   if (val >= 425) return 'C';   // 12
+//   if (val >= 360) return '*';   // 13
+//   if (val >= 300) return '0';   // 14
+//   if (val >= 255) return '#';   // 15
+//   if (val >= 200) return 'D';   // 16
+//   return 0;
+// }
 
-bool handleKeypad(void *t) {
-  if (gameState != CONTROL_ROOM) return true;
-  char customKey = getKey();
-  if (customKey) {
-    keypadEntered[keypadCount++] = customKey;
-    if (keypadCount == 5) {
-      for (int i = 0; i < 5; i++) {
-        if (keypadEntered[i] != keypadCode[i]) {
-          mp3Player.play(TRACK_WRONG);
-          return true;
-        }
-      }
-      playInfoThenTrack(TRACK_CONTROL_ROOM_ACCESS_GRANTED);
-      gameState++;
-    }
-  }
-  return true;
-}
+// bool handleKeypad(void *t) {
+//   if (gameState != CONTROL_ROOM) return true;
+//   char customKey = getKey();
+//   if (customKey) {
+//     keypadEntered[keypadCount++] = customKey;
+//     if (keypadCount == 5) {
+//       for (int i = 0; i < 5; i++) {
+//         if (keypadEntered[i] != keypadCode[i]) {
+//           mp3Player.play(TRACK_WRONG);
+//           return true;
+//         }
+//       }
+//       playInfoThenTrack(TRACK_CONTROL_ROOM_ACCESS_GRANTED);
+//       gameState++;
+//     }
+//   }
+//   return true;
+// }
 
-void reportKeycode() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Keycode");
-  lcd.setCursor(0, 1);
-  for (int s = 0; s < 5; s++) {
-    lcd.print(keypadCode[s]);
-    lcd.print(" ");
-  }
-  delay(10000);
-  lcd.clear();
-}
+// void reportKeycode() {
+//   lcd.clear();
+//   lcd.setCursor(0, 0);
+//   lcd.print("Keycode");
+//   lcd.setCursor(0, 1);
+//   for (int s = 0; s < 5; s++) {
+//     lcd.print(keypadCode[s]);
+//     lcd.print(" ");
+//   }
+//   delay(10000);
+//   lcd.clear();
+// }
 
-void initKeypad() {
-  for (int i = 0; i < 5; i++) {
-    keypadCode[i] = letters[random(16)];
-  }
-  keypadTimer.every(200, handleKeypad);
-}
+// void initKeypad() {
+//   for (int i = 0; i < 5; i++) {
+//     keypadCode[i] = letters[random(16)];
+//   }
+//   keypadTimer.every(200, handleKeypad);
+//}
 
 /* ---------------- END KEYPAD ---------------------*/
 
@@ -983,7 +1085,6 @@ void fireBeam() {
     col += deltaX;
     if (row < 0 || row == 8 || col < 0 || col == 8) {  // hit perimeter
       placeBeamMarker(beamColors[nextColorIndex], currentBeamLight);
-      int outLoc = 0;
       //? is calc beam light from row/col
       placeBeamMarker(beamColors[nextColorIndex++], calcBeamLight(col, row));
       break;
@@ -1207,7 +1308,7 @@ void setup() {
   timer.every(1000, updateCountdown);
   brightnessTimer.every(100, checkBrightness);
   initTone();
-  initKeypad();
+//  initKeypad();
   initMP3Player();
   initBlackbox();
 
@@ -1227,7 +1328,7 @@ void loop() {
   oneShotTimers.tick();
   timer.tick();
   brightnessTimer.tick();
-  keypadTimer.tick();
+//  keypadTimer.tick();
   bbBeamJoystickTimer.tick();
   bbMarkerJoystickTimer.tick();
   beamButtonTimer.tick();
