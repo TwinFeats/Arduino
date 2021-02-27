@@ -834,8 +834,8 @@ void initControlRoom() {
 #define TONE_PLAY 40
 
 Tone tonePlayer;
-ButtonDebounce tone1(TONE_BUTTON_1, 100);
-ButtonDebounce tone2(TONE_BUTTON_2, 100);
+ButtonDebounce tone1(PIN_TONE_BUTTON_1, 100);
+ButtonDebounce tone2(PIN_TONE_BUTTON_2, 100);
 ButtonDebounce tone3(TONE_BUTTON_3, 100);
 ButtonDebounce tone4(TONE_BUTTON_4, 100);
 ButtonDebounce tone5(TONE_BUTTON_5, 100);
@@ -920,8 +920,8 @@ void tonePlayPressed(const int state) {
 }
 
 void initTone() {
-  pinMode(TONE_BUTTON_1, INPUT_PULLUP);
-  pinMode(TONE_BUTTON_2, INPUT_PULLUP);
+  pinMode(PIN_TONE_BUTTON_1, INPUT_PULLUP);
+  pinMode(PIN_TONE_BUTTON_2, INPUT_PULLUP);
   pinMode(TONE_BUTTON_3, INPUT_PULLUP);
   pinMode(TONE_BUTTON_4, INPUT_PULLUP);
   pinMode(TONE_BUTTON_5, INPUT_PULLUP);
